@@ -140,13 +140,9 @@ function renderCustomDemoCharts(data, years) {
   }
 }
 
-// KZLEAP — Results Page
-// Fetches real data from Python backend (http://localhost:8000)
-// Falls back to built-in model if backend is offline
 
 const BACKEND = 'http://localhost:8000';
 
-// Базовые значения — загружаются из /api/config (перезаписывают дефолты при старте)
 let CFG = {
   base_co2: 242, base_elec: 115, base_tpes: 85,
   base_year: 2023, ndc_unconditional: 246.5, ndc_conditional: 217.5,
@@ -158,7 +154,6 @@ async function loadConfig() {
   } catch {}
 }
 
-// ── User / role setup ──
 const user = JSON.parse(sessionStorage.getItem('kzleap_user') || '{"name":"Ali B.","role":"analyst"}');
 const avatarColors = { analyst: '#1D9E75', researcher: '#534AB7', policymaker: '#993C1D' };
 const badgeStyles = {
@@ -185,10 +180,8 @@ const access = {
   if (el && !access[user.role].includes(id)) el.classList.add('locked');
 });
 
-// ── Chart instances (kept for later destroy on re-render) ──
 let co2Chart, energyChart, fuelChart;
 
-// ── Fallback data (if backend offline) ──
 function getFallbackData() {
   const b  = CFG.base_co2;
   const el = CFG.base_elec;
@@ -211,7 +204,6 @@ function getFallbackData() {
   };
 }
 
-// ── Fetch from backend ──
 async function loadData() {
   showLoading(true);
   try {

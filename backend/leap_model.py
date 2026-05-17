@@ -1,10 +1,6 @@
 import numpy as np
 from typing import Dict, List, Optional
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ВСТРОЕННЫЕ ДАННЫЕ (используются если Excel не загружен)
-# ══════════════════════════════════════════════════════════════════════════════
-
 HISTORICAL_TPES = {
     1990: 105.0, 1995: 75.0,  2000: 57.0,  2005: 68.0,
     2010: 74.0,  2015: 77.0,  2018: 76.0,  2020: 78.0,
@@ -83,11 +79,6 @@ DEMO_PROJECTIONS = {
     "MT":  {"pop_growth": 0.011, "urbanization_rate": 0.004, "working_age_2050": 63.5},
     "DD":  {"pop_growth": 0.010, "urbanization_rate": 0.005, "working_age_2050": 63.0},
 }
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ДИНАМИЧЕСКИЙ СТОР
-# ══════════════════════════════════════════════════════════════════════════════
-
 _ACTIVE_DATASET  = None
 _BASE_CO2        = 242.0
 _BASE_ELEC       = 115.0
@@ -97,15 +88,12 @@ _BASE_URBAN      = 58.0
 _BASE_WORKING    = 66.5
 _BASE_GDP_PC     = 13.0
 _BASE_YEAR       = 2023
-_NON_POWER_COEFF = None  # вычисляется автоматически
+_NON_POWER_COEFF = None 
 
 
 def _calc_non_power_coeff(base_co2, base_elec, elec_mix):
-    """
-    Вычисляет долю non-power CO2 так, чтобы в базовом году
-    модель давала ровно base_co2.
-    Формула: non_power = base_co2 - power_co2(base_year)
-    """
+    #non_power = base_co2 - power_co2(base_year)
+    
     coal = elec_mix.get("coal", 61.0) / 100
     gas  = elec_mix.get("gas",  24.0) / 100
     power_co2  = base_elec * coal * 0.82 + base_elec * gas * 0.49
@@ -193,11 +181,6 @@ def get_active_dataset_info():
         "base_year": _ACTIVE_DATASET.get("base_year"),
     }
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ОСНОВНАЯ МОДЕЛЬ
-# ══════════════════════════════════════════════════════════════════════════════
-
 def run_scenario(scenario_key: str, start_year: int = 2024, end_year: int = 2060) -> Dict:
     params    = SCENARIOS[scenario_key]
     years     = list(range(start_year, end_year + 1))
@@ -238,7 +221,7 @@ def run_scenario(scenario_key: str, start_year: int = 2024, end_year: int = 2060
         results["tpes"].append(round(tpes, 1))
         results["electricity"].append(round(elec_demand, 1))
 
-        # ВИЭ
+        # возобновляемые источники энергии
         re_t30 = params["renewables_2030"]
         re_t50 = params["renewables_2050"]
         if year <= year_30:
@@ -249,7 +232,7 @@ def run_scenario(scenario_key: str, start_year: int = 2024, end_year: int = 2060
             re_share = re_t50 + (re_t50 * 0.05) * ((year - year_50) / 10)
         re_share = min(re_share, 0.85)
 
-        # АЭС
+        # атомная энергия - растет за 10 лет
         if year >= year_nuc and params["nuclear_gw_2035"] > 0:
             nuc_ramp  = min((year - year_nuc) / 10, 1.0)
             nuc_share = min((params["nuclear_gw_2035"] * 1.1 * nuc_ramp) / max(elec_demand, 1) * 8760 / 1000, 0.15)
@@ -276,13 +259,13 @@ def run_scenario(scenario_key: str, start_year: int = 2024, end_year: int = 2060
         results["wind_solar_share"].append(round(re_share    * 100, 1))
         results["nuclear_share"].append(   round(nuc_share   * 100, 1))
 
-        # CO₂ — откалиброван под base_year
-        coal_co2      = elec_demand * coal_share * 0.82
-        gas_co2       = elec_demand * gas_share  * 0.49
-        non_power_co2 = base_co2 * non_power_coeff * gdp_factor * eff_factor
-        co2           = coal_co2 + gas_co2 + non_power_co2
+        
+        coal_co2      = elec_demand * coal_share * 0.82 #коэффициент для угля, 820 кг со2/мегават час
+        gas_co2       = elec_demand * gas_share  * 0.49 #коэффициент для газа, 490 кг со2/мегават час
+        non_power_co2 = base_co2 * non_power_coeff * gdp_factor * eff_factor 
+        co2           = coal_co2 + gas_co2 + non_power_co2 
 
-        cp           = params["co2_price_2030"] if year <= year_30 else params["co2_price_2050"]
+        cp           = params["co2_price_2030"] if year <= year_30 else params["co2_price_2050"] #углеродный налог, снижение выбросов
         cp_reduction = max(1.0 - (cp / 1000) * 0.5, 0.5)
         co2         *= cp_reduction
 
@@ -371,9 +354,9 @@ def run_scenario_with_demographics(scenario_key: str, start_year: int = 2024, en
 
     for i, year in enumerate(years):
         t = year - base_year
-
-        pop     = base_pop   * (1 + demo["pop_growth"]) ** t
-        urban   = min(base_urban + demo["urbanization_rate"] * t * 100, 80.0)
+        #демография
+        pop     = base_pop   * (1 + demo["pop_growth"]) ** t #рост населения
+        urban   = min(base_urban + demo["urbanization_rate"] * t * 100, 80.0) #урбанизация, макс 80%
         working = base_working + (demo["working_age_2050"] - base_working) * (t / max(year_50 - base_year, 1))
         gdp_pc  = base_gdp_pc * (1 + params["gdp_growth"]) ** t
 

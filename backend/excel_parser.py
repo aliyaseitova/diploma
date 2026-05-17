@@ -1,18 +1,3 @@
-"""
-excel_parser.py — KZLEAP Excel Dataset Parser
-==============================================
-Парсит Excel-файлы единого формата и возвращает данные для leap_model.py.
-
-Ожидаемые листы в Excel-файле:
-  - historical_energy   : исторические данные по энергетике (ТПЭС, электричество, CO2)
-  - historical_demo     : демографические данные (население, урбанизация, ВВП)
-  - elec_mix            : структура электрогенерации базового года
-  - scenarios           : параметры сценариев BAU / MT / DD
-  - ndc_targets         : цели NDC и нейтральности
-
-Формат каждого листа описан в KZLEAP_DATA_TEMPLATE.xlsx (шаблон).
-"""
-
 import io
 from typing import Dict, Optional, Any
 
@@ -29,7 +14,6 @@ except ImportError:
     PANDAS_OK = False
 
 
-# ── Константы имён листов ─────────────────────────────────────────────────────
 SHEET_HIST_ENERGY = "historical_energy"
 SHEET_HIST_DEMO   = "historical_demo"
 SHEET_ELEC_MIX    = "elec_mix"
@@ -39,29 +23,11 @@ SHEET_NDC         = "ndc_targets"
 REQUIRED_SHEETS = [SHEET_HIST_ENERGY, SHEET_HIST_DEMO, SHEET_ELEC_MIX, SHEET_SCENARIOS, SHEET_NDC]
 
 
-# ── Главная функция ───────────────────────────────────────────────────────────
-def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
-    """
-    Принимает байты Excel-файла, возвращает словарь с данными или {"error": "..."}.
 
-    Возвращаемая структура:
-    {
-      "source": "kzleap_excel",
-      "filename": str,
-      "historical_tpes":        {year: float, ...},
-      "historical_elec":        {year: float, ...},
-      "historical_co2":         {year: float, ...},
-      "historical_gdp":         {year: float, ...},
-      "historical_pop":         {year: float, ...},
-      "historical_working_age": {year: float, ...},
-      "historical_urban":       {year: float, ...},
-      "elec_mix_base":          {"coal": float, "gas": float, ...},  # в %
-      "scenarios":              { "BAU": {...}, "MT": {...}, "DD": {...} },
-      "ndc_targets":            { "base_year": int, "base_co2": float, ... },
-    }
-    """
+def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
+
     if not OPENPYXL_OK and not PANDAS_OK:
-        return {"error": "openpyxl и pandas не установлены"}
+        return {"error": "openpyxl and pandas are not installed. Please install at least one of them to parse Excel files."}
 
     try:
         if OPENPYXL_OK:
@@ -72,20 +38,19 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
             xf = pd.ExcelFile(io.BytesIO(file_bytes))
             sheets_found = xf.sheet_names
     except Exception as e:
-        return {"error": f"Не удалось открыть файл: {e}"}
+        return {"error": f"Failed to open file: {e}"}
 
     missing = [s for s in REQUIRED_SHEETS if s not in sheets_found]
     if missing:
         return {
-            "error": f"В файле отсутствуют листы: {', '.join(missing)}. "
-                     f"Используйте шаблон KZLEAP_DATA_TEMPLATE.xlsx.",
+            "error": f"Missing sheets in file: {', '.join(missing)}. "
+                     f"Use KZLEAP_DATA_TEMPLATE.xlsx.",
             "sheets_found": sheets_found,
         }
 
     result: Dict[str, Any] = {"source": "kzleap_excel", "filename": filename}
 
-    # ── 1. historical_energy ─────────────────────────────────────────────────
-    #   Формат: Year | TPES_Mtoe | Electricity_TWh | CO2_Mt
+
     try:
         he = _read_sheet_as_dicts(wb if OPENPYXL_OK else None,
                                   file_bytes, SHEET_HIST_ENERGY)
@@ -102,17 +67,15 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
             if v_co2  is not None: co2[y]  = v_co2
 
         if not tpes and not elec and not co2:
-            return {"error": f"Лист '{SHEET_HIST_ENERGY}' пуст или содержит неверные заголовки. "
-                             "Ожидается: Year, TPES_Mtoe, Electricity_TWh, CO2_Mt"}
+            return {"error": f"'{SHEET_HIST_ENERGY}' is empty or has invalid format. "
+                             "Expected columns: Year, TPES_Mtoe, Electricity_TWh, CO2_Mt"}
 
         result["historical_tpes"] = tpes
         result["historical_elec"] = elec
         result["historical_co2"]  = co2
     except Exception as e:
-        return {"error": f"Ошибка парсинга листа '{SHEET_HIST_ENERGY}': {e}"}
+        return {"error": f"Error parsing '{SHEET_HIST_ENERGY}': {e}"}
 
-    # ── 2. historical_demo ───────────────────────────────────────────────────
-    #   Формат: Year | Population_M | WorkingAge_pct | Urban_pct | GDP_USD_B
     try:
         hd = _read_sheet_as_dicts(wb if OPENPYXL_OK else None,
                                    file_bytes, SHEET_HIST_DEMO)
@@ -135,11 +98,8 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
         result["historical_urban"]       = urban
         result["historical_gdp"]         = gdp
     except Exception as e:
-        return {"error": f"Ошибка парсинга листа '{SHEET_HIST_DEMO}': {e}"}
+        return {"error": f"Error parsing '{SHEET_HIST_DEMO}': {e}"}
 
-    # ── 3. elec_mix ──────────────────────────────────────────────────────────
-    #   Формат: Source | Share_pct
-    #   Source: coal, gas, hydro, wind, solar, nuclear
     try:
         em = _read_sheet_as_dicts(wb if OPENPYXL_OK else None,
                                    file_bytes, SHEET_ELEC_MIX)
@@ -150,17 +110,12 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
             if src and share is not None:
                 mix[src] = share
         if not mix:
-            return {"error": f"Лист '{SHEET_ELEC_MIX}' пуст. "
-                             "Ожидается: Source (coal/gas/hydro/wind/solar/nuclear), Share_pct"}
+            return {"error": f"'{SHEET_ELEC_MIX}' is empty. "
+                             "Expected columns: Source (coal/gas/hydro/wind/solar/nuclear), Share_pct"}
         result["elec_mix_base"] = mix
     except Exception as e:
-        return {"error": f"Ошибка парсинга листа '{SHEET_ELEC_MIX}': {e}"}
+        return {"error": f"Error parsing '{SHEET_ELEC_MIX}': {e}"}
 
-    # ── 4. scenarios ─────────────────────────────────────────────────────────
-    #   Формат: Parameter | BAU | MT | DD
-    #   Строки: name, description, gdp_growth, energy_intensity_change,
-    #           coal_share_2050, renewables_2030, renewables_2050,
-    #           nuclear_gw_2035, co2_price_2030, co2_price_2050, ev_share_2050
     try:
         sc_rows = _read_sheet_as_dicts(wb if OPENPYXL_OK else None,
                                         file_bytes, SHEET_SCENARIOS)
@@ -172,7 +127,7 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
             for key in ["BAU", "MT", "DD"]:
                 raw = row.get(key) or row.get(key.lower())
                 if raw is not None and str(raw).strip() != "":
-                    # строковые поля
+                    
                     if param in ("name", "description"):
                         scenarios[key][param] = str(raw).strip()
                     else:
@@ -188,7 +143,7 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
             if missing_p:
                 return {"error": f"Сценарий {key}: отсутствуют параметры {missing_p}"}
 
-        # Дефолты для необязательных
+  
         for key in ["BAU", "MT", "DD"]:
             scenarios[key].setdefault("nuclear_gw_2035", 0.0)
             scenarios[key].setdefault("ev_share_2050", 0.0)
@@ -198,12 +153,9 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
 
         result["scenarios"] = scenarios
     except Exception as e:
-        return {"error": f"Ошибка парсинга листа '{SHEET_SCENARIOS}': {e}"}
+        return {"error": f"Error parsing '{SHEET_SCENARIOS}': {e}"}
 
-    # ── 5. ndc_targets ───────────────────────────────────────────────────────
-    #   Формат: Parameter | Value
-    #   Строки: base_year, base_co2_mt, ndc_unconditional_pct, ndc_conditional_pct,
-    #           neutrality_year
+
     try:
         ndc_rows = _read_sheet_as_dicts(wb if OPENPYXL_OK else None,
                                          file_bytes, SHEET_NDC)
@@ -228,10 +180,8 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
             "neutrality_year":        int(ndc["neutrality_year"]),
         }
     except Exception as e:
-        return {"error": f"Ошибка парсинга листа '{SHEET_NDC}': {e}"}
+        return {"error": f"Error parsing '{SHEET_NDC}': {e}"}
 
-    # ── Итоговые базовые значения для моделирования ──────────────────────────
-    # Берём последний доступный год из исторических данных как базовый
     if result["historical_co2"]:
         last_year = max(result["historical_co2"].keys())
         result["base_year"]  = last_year
@@ -246,19 +196,13 @@ def parse_kzleap_excel(file_bytes: bytes, filename: str = "") -> Dict:
     return result
 
 
-# ── Вспомогательные функции ───────────────────────────────────────────────────
-
 def _read_sheet_as_dicts(wb, file_bytes: bytes, sheet_name: str):
-    """
-    Читает лист как список словарей.
-    Первая непустая строка, не начинающаяся с '#', считается заголовком.
-    """
+
     if wb is not None:
         ws = wb[sheet_name]
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             return []
-        # Ищем строку заголовков — пропускаем пустые и комментарии (#)
         header_idx = None
         for i, row in enumerate(rows):
             first_cell = str(row[0]).strip() if row[0] is not None else ""
@@ -305,13 +249,9 @@ def _int(v) -> Optional[int]:
     return int(f) if f is not None else None
 
 
-# ── Генератор шаблона Excel ───────────────────────────────────────────────────
 
 def create_template_excel() -> bytes:
-    """
-    Создаёт шаблон Excel-файла KZLEAP_DATA_TEMPLATE.xlsx с примерными данными Казахстана.
-    Возвращает байты файла.
-    """
+
     if not OPENPYXL_OK:
         raise RuntimeError("openpyxl не установлен")
 
@@ -320,7 +260,7 @@ def create_template_excel() -> bytes:
     from openpyxl.utils import get_column_letter
 
     wb = Workbook()
-    wb.remove(wb.active)  # убираем дефолтный лист
+    wb.remove(wb.active)  
 
     HDR_FILL   = PatternFill("solid", fgColor="1D6B48")
     HDR_FONT   = Font(color="FFFFFF", bold=True)
@@ -353,7 +293,6 @@ def create_template_excel() -> bytes:
             max_len = max((len(str(cell.value or "")) for cell in col), default=8)
             ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 4, 12)
 
-    # ── Лист 1: historical_energy ────────────────────────────────────────────
     ws1 = wb.create_sheet(SHEET_HIST_ENERGY)
     note(ws1, "# Исторические данные по энергетике Казахстана. Заполните реальными значениями.", 1)
     header_row(ws1, ["Year", "TPES_Mtoe", "Electricity_TWh", "CO2_Mt"], row=2)
@@ -374,7 +313,6 @@ def create_template_excel() -> bytes:
         data_row(ws1, row_data, i)
     auto_width(ws1)
 
-    # ── Лист 2: historical_demo ──────────────────────────────────────────────
     ws2 = wb.create_sheet(SHEET_HIST_DEMO)
     note(ws2, "# Демографические и экономические данные. Population_M — миллионы человек. GDP_USD_B — млрд USD.", 1)
     header_row(ws2, ["Year", "Population_M", "WorkingAge_pct", "Urban_pct", "GDP_USD_B"], row=2)
@@ -394,7 +332,6 @@ def create_template_excel() -> bytes:
         data_row(ws2, row_data, i)
     auto_width(ws2)
 
-    # ── Лист 3: elec_mix ────────────────────────────────────────────────────
     ws3 = wb.create_sheet(SHEET_ELEC_MIX)
     note(ws3, "# Структура электрогенерации базового года (последний исторический год). Сумма должна = 100%.", 1)
     header_row(ws3, ["Source", "Share_pct"], row=2)
@@ -410,15 +347,14 @@ def create_template_excel() -> bytes:
         data_row(ws3, row_data, i)
     auto_width(ws3)
 
-    # ── Лист 4: scenarios ────────────────────────────────────────────────────
     ws4 = wb.create_sheet(SHEET_SCENARIOS)
     note(ws4, "# Параметры сценариев. Каждая строка — параметр, столбцы BAU/MT/DD — значения.", 1)
     header_row(ws4, ["Parameter", "BAU", "MT", "DD"], row=2)
     sc_data = [
         ("name",                    "Business as Usual", "Moderate Transition", "Deep Decarbonization"),
-        ("description",             "Текущая политика, нет новых климатических мер",
-                                    "Цели NDC выполнены, постепенный переход",
-                                    "Углеродная нейтральность к 2060"),
+        ("description",             "Current policies continue, NDC targets не достигнуты",
+                                    "NDC targets are met, moderate push for renewables and efficiency",
+                                    "Carbon neutrality by 2060, aggressive renewables and efficiency"),
         ("gdp_growth",              0.040,  0.042,  0.043),
         ("energy_intensity_change", -0.010, -0.020, -0.030),
         ("coal_share_2050",         0.45,   0.25,   0.05),
@@ -433,7 +369,6 @@ def create_template_excel() -> bytes:
         data_row(ws4, row_data, i)
     auto_width(ws4)
 
-    # ── Лист 5: ndc_targets ──────────────────────────────────────────────────
     ws5 = wb.create_sheet(SHEET_NDC)
     note(ws5, "# Цели NDC Казахстана. ndc_*_pct — в % к базовому году (отрицательные = снижение).", 1)
     header_row(ws5, ["Parameter", "Value"], row=2)
@@ -448,7 +383,6 @@ def create_template_excel() -> bytes:
         data_row(ws5, row_data, i)
     auto_width(ws5)
 
-    # ── Сохраняем ─────────────────────────────────────────────────────────
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()

@@ -1,2 +1,0 @@
-# kzleap
-diploma

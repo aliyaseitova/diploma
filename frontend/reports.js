@@ -128,7 +128,7 @@ async function generatePDF() {
 </head>
 <body>
   <div class="btn-bar">
-    <button class="btn btn-print" onclick="window.print()">🖨 Print</button>
+    <button class="btn btn-print" onclick="window.print()">Press to print</button>
     <button class="btn btn-pdf" onclick="savePDF()">⬇ Save PDF</button>
   </div>
 
@@ -202,7 +202,7 @@ async function generatePDF() {
   <script>
     async function savePDF() {
       const btn = document.querySelector('.btn-pdf');
-      btn.textContent = '⏳ Saving...';
+      btn.textContent = 'Saving...';
       btn.disabled = true;
       try {
         const { jsPDF } = window.jspdf;

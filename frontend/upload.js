@@ -17,7 +17,6 @@ badge.style.background = badgeStyles[user.role].bg;
 badge.style.color = badgeStyles[user.role].color;
 
 
-// Role-based access for upload
 if (user.role === 'researcher' || user.role === 'policymaker') {
   const zone = document.getElementById('upload-zone');
   if (zone) {
@@ -63,7 +62,7 @@ async function handleFiles(files) {
 async function uploadFile(file) {
   const allowed = file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
   if (!allowed) {
-    showResult('error', file.name, 'Поддерживаемые форматы: .xlsx (KZLEAP-шаблон) или .csv (OWID / World Bank)');
+    showResult('error', file.name, 'Supported formats: .xlsx (KZLEAP template) or .csv (OWID / World Bank)');
     return;
   }
 
@@ -87,7 +86,7 @@ async function uploadFile(file) {
 
     let summary = '';
     if (data.source === 'kzleap_excel') {
-      summary = `✓ KZLEAP Excel · Базовый год: ${data.summary.base_year} · CO₂: ${data.summary.base_co2_mt} Mt · Электричество: ${data.summary.base_elec_twh} TWh · Годы: ${data.summary.historical_years}`;
+      summary = `✓ KZLEAP Excel · Base year: ${data.summary.base_year} · CO₂: ${data.summary.base_co2_mt} Mt · Electricity: ${data.summary.base_elec_twh} TWh · Years: ${data.summary.historical_years}`;
     } else if (data.source === 'owid') {
       summary = `✓ Our World in Data · ${data.summary.indicator} · ${data.summary.years_range} · ${data.summary.data_points} data points`;
     } else if (data.source === 'worldbank') {
@@ -156,13 +155,13 @@ loadExisting();
 async function downloadTemplate() {
   try {
     const res = await fetch(`${BACKEND}/api/template`);
-    if (!res.ok) { alert('Не удалось получить шаблон.'); return; }
+    if (!res.ok) { alert('A template could not be downloaded.'); return; }
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = 'KZLEAP_DATA_TEMPLATE.xlsx';
     a.click(); URL.revokeObjectURL(url);
   } catch(e) {
-    alert('Бэкенд не запущен. Запустите: python main.py');
+    alert('A template could not be downloaded.');
   }
 }
