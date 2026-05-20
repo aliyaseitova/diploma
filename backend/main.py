@@ -14,6 +14,7 @@ from lp_optimizer import run_lp_optimization
 from database import init_db, SessionLocal, User, LoginLog, VerificationCode, Dataset, hash_password
 from email_service import generate_code, send_verification_email
 from datetime import datetime
+import httpx
 
 init_db()
 
@@ -678,6 +679,59 @@ def run_custom_scenario(req: CustomScenarioRequest):
         results["transport_demand"].append(round(transport, 1))
 
     return results
+
+class ClaudeRequest(BaseModel):
+    messages: list
+    system: Optional[str] = None
+    max_tokens: int = 1000
+    stream: bool = False
+
+@app.post("/api/claude")
+async def claude_proxy(req: ClaudeRequest, request: Request):
+    api_key = os.getenv("GROQ_API_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "GROQ_API_KEY not set in .env")
+
+    messages = req.messages
+    if req.system:
+        messages = [{"role": "system", "content": req.system}] + list(messages)
+
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "max_tokens": req.max_tokens,
+        "messages": messages,
+        "stream": req.stream,
+    }
+
+    from fastapi.responses import StreamingResponse
+
+    if req.stream:
+        async def event_stream():
+            async with httpx.AsyncClient(timeout=60) as client:
+                async with client.stream(
+                    "POST",
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "content-type": "application/json",
+                    },
+                    json=payload,
+                ) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "content-type": "application/json",
+            },
+            json=payload,
+        )
+    return resp.json()
+
 
 if __name__ == "__main__":
     import uvicorn
